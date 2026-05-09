@@ -106,7 +106,10 @@ def create_app(manifest: ModelManifest, model_dir: str) -> FastAPI:
         try:
             media_data = getattr(input_data, data_field)
             result = instance.safe_predict(media_data, input_data.threshold)
-            return result.model_dump(by_alias=True)
+            if hasattr(result, "model_dump"):
+                return result.model_dump(by_alias=True)
+            else:
+                return result.dict(by_alias=True)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except RuntimeError as e:
