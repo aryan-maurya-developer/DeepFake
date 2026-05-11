@@ -90,6 +90,9 @@ CONTENT_TYPE_TO_MEDIA_TYPE_MAP: Dict[str, str] = {
     "audio/mpeg": "audio",
     "audio/flac": "audio",
     "audio/ogg": "audio",
+    "video/ogg": "audio",
+    "audio/webm": "audio",
+    "video/webm": "video",
     "audio/x-m4a": "audio",
 }
 
@@ -676,7 +679,11 @@ def calculate_ensemble_verdict_api(
     actual_method_used = method
     ensemble_prob_fake_score: float = 0.5
 
-    if method == "stacking":
+    if total_valid_models == 1:
+        logger.info(f"Request {request_id}: Only 1 valid model result. Forcing ensemble method to 'average'.")
+        actual_method_used = "average"
+
+    if actual_method_used == "stacking":
         learner = meta_learners.get(media_type)
         scaler = meta_scalers.get(media_type)
         imputer = meta_imputers.get(media_type)
@@ -825,7 +832,7 @@ async def health_check_api_endpoint(request: Request):
         if (
             not type_specific_status["stacking_ensemble_loaded"]
             and default_ensemble == "stacking"
-        ):
+        )
             if type_specific_status["status"] == "healthy":
                 type_specific_status["status"] = "degraded_stacking_unavailable"
             overall_system_is_healthy = False

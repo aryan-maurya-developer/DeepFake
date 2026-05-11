@@ -34,6 +34,21 @@
         "*.mov",
         "*.mkv"
       ]
+    },
+    "audio": {
+      "model_endpoints": {
+        "vocoder_artifacts": "http://vocoder_artifacts:8001/predict"
+      },
+      "health_endpoints": {
+        "vocoder_artifacts": "http://vocoder_artifacts:8001/health"
+      },
+      "supported_extensions": [
+        "*.wav",
+        "*.mp3",
+        "*.flac",
+        "*.ogg",
+        "*.m4a"
+      ]
     }
   },
   "default_output_dir_base": "./deepfake_test_results",

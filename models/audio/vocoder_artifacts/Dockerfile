@@ -16,7 +16,7 @@ WORKDIR /app
 RUN git clone https://github.com/csun22/Synthetic-Voice-Detection-Vocoder-Artifacts.git temp_repo
 
 # Install Python dependencies
-RUN uv pip install --system --no-cache \
+RUN uv pip install --system --no-cache --extra-index-url https://download.pytorch.org/whl/cpu \
     torch==1.13.1 \
     torchaudio==0.13.1 \
     flask==2.3.0 \
@@ -28,7 +28,7 @@ RUN uv pip install --system --no-cache \
 RUN mkdir -p /app/models
 
 # Copy API wrapper
-COPY api.py .
+COPY models/audio/vocoder_artifacts/api.py .
 
 # Download pretrained model (users should mount or download separately)
 # Due to size, this should be done via volume mount or manual download
