@@ -52,9 +52,11 @@ const Register = ({ onLogin }) => {
         <div className="auth-container">
             <div className="card auth-card">
                 <div className="auth-header">
-                    <div className="logo-icon">DS</div>
+                    <div className="logo-icon">
+                    <img src="/assets/deepfake.png" alt="logo" />
+                    </div>
                     <h2>Create Account</h2>
-                    <p>Join DeepFake Platform</p>
+                    <p>Join AmsR DeepShield Platform</p>
                 </div>
 
                 <form onSubmit={handleSubmit}>

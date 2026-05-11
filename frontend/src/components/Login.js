@@ -45,9 +45,11 @@ const Login = ({ onLogin }) => {
         <div className="auth-container">
             <div className="card auth-card">
                 <div className="auth-header">
-                    <div className="logo-icon">DS</div>
+                    <div className="logo-icon">
+                    <img src="/assets/deepfake.png" alt="logo" />
+                    </div>
                     <h2>Welcome Back</h2>
-                    <p>Sign in to access DeepFake</p>
+                    <p>Sign in to access DeepShield</p>
                 </div>
 
                 <form onSubmit={handleSubmit}>
