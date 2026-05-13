@@ -832,12 +832,14 @@ async def health_check_api_endpoint(request: Request):
         if (
             not type_specific_status["stacking_ensemble_loaded"]
             and default_ensemble == "stacking"
-        )
+        ):
             if type_specific_status["status"] == "healthy":
                 type_specific_status["status"] = "degraded_stacking_unavailable"
+
             overall_system_is_healthy = False
             logger.warning(
-                f"Request {req_id}: Stacking (default method) for '{m_type}' is unavailable. System component for this media type is degraded."
+                f"Request {req_id}: Stacking (default method) for '{m_type}' is unavailable. "
+                f"System component for this media type is degraded."
             )
 
         system_health_report["media_type_details"][m_type] = type_specific_status

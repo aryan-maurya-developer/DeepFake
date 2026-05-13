@@ -1,95 +1,160 @@
 // frontend/src/components/Header.js
 import React from 'react';
-import { Settings, X, Bug, Moon, Sun } from 'lucide-react';
+import { Settings, X, Moon, Sun, LogOut } from 'lucide-react';
 
 const Header = ({ 
   showSettings, 
   toggleSettings, 
   darkMode,
   setDarkMode,
-  debugMode,
-  toggleDebugMode
+  theme,
+  setTheme,
+  onLogout,
+  renderHealthStatus
 }) => {
+  const accentColor = theme === 'green' ? '#10b981' : '#f97316';
+  
   return (
-    <header className="bg-gradient-to-r from-primary-700 via-primary-600 to-primary-700 dark:from-primary-900 dark:via-primary-800 dark:to-primary-900 text-white shadow-lg z-50 transition-all duration-300">
-      <div className="relative overflow-hidden">
-        {/* Background pattern */}
-        <div className="absolute inset-0 bg-white/5 backdrop-blur-[2px]"></div>
-        <div className="absolute inset-0 bg-gradient-to-br from-transparent via-white/5 to-transparent"></div>
-        
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-5">
-            <div className="flex items-center space-x-4">
-              <div className="relative group">
-                <div className="absolute inset-0 bg-white/20 rounded-full blur-xl group-hover:blur-2xl transition-all duration-300"></div>
-                <div className="relative rounded-full shadow-xl transform transition-all duration-300 group-hover:scale-110 overflow-hidden">
-                  <img 
-                    src="/assets/deepfake.png" 
-                    alt="DeepFake Logo" 
-                    className="h-11 w-11 object-cover rounded-full"
-                  />
-                </div>
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight flex items-baseline">
-                  DeepFake
-                  <span className="ml-2 text-xs font-normal bg-white/20 px-2 py-0.5 rounded-full">Beta</span>
-                </h1>
-                <p className="text-sm text-primary-100 dark:text-primary-200 opacity-90 mt-0.5">
-                  Advanced AI Deepfake Detection
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setDarkMode(!darkMode)}
-                className="relative p-2.5 rounded-lg hover:bg-white/10 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-white/20 group"
-                aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-              >
-                <div className="absolute inset-0 bg-white/0 group-hover:bg-white/10 rounded-lg transition-colors duration-200"></div>
-                <div className="relative transform transition-transform duration-200 group-hover:scale-110 group-active:scale-95">
-                  {darkMode ? <Sun size={22} /> : <Moon size={22} />}
-                </div>
-              </button>
-
-              {process.env.NODE_ENV === 'development' && (
-                <button
-                  onClick={toggleDebugMode}
-                  className={`
-                    relative p-2.5 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-white/20 group
-                    ${debugMode ? 'bg-red-500/20 hover:bg-red-500/30' : 'hover:bg-white/10'}
-                  `}
-                  aria-label={debugMode ? 'Disable debug mode' : 'Enable debug mode'}
-                >
-                  <div className="relative transform transition-transform duration-200 group-hover:scale-110 group-active:scale-95">
-                    <Bug size={22} className={debugMode ? 'text-red-200' : 'text-white'} />
-                  </div>
-                  {debugMode && (
-                    <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-400 rounded-full animate-pulse"></span>
-                  )}
-                </button>
-              )}
-
-              <button
-                onClick={toggleSettings}
-                className={`
-                  relative p-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-white/20 transition-all duration-200 group
-                  ${showSettings ? 'bg-white/20 hover:bg-white/30' : 'hover:bg-white/10'}
-                `}
-                aria-label={showSettings ? 'Hide settings' : 'Show settings'}
-              >
-                <div className="relative transform transition-all duration-300 group-hover:scale-110 group-active:scale-95">
-                  {showSettings ? (
-                    <X size={22} className="transform rotate-0 transition-transform duration-300" />
-                  ) : (
-                    <Settings size={22} className="transform rotate-0 hover:rotate-90 transition-transform duration-300" />
-                  )}
-                </div>
-              </button>
-            </div>
-          </div>
+    <header style={{
+      background: `linear-gradient(135deg, rgba(15, 23, 42, 0.7) 0%, rgba(30, 41, 59, 0.7) 100%)`,
+      backdropFilter: 'blur(20px)',
+      WebkitBackdropFilter: 'blur(20px)',
+      borderBottom: `1px solid rgba(255, 255, 255, 0.15)`,
+      color: 'white',
+      padding: '1rem 2rem',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 1px rgba(255, 255, 255, 0.1)',
+      position: 'sticky',
+      top: 0,
+      zIndex: 100,
+      transition: 'all 0.3s ease'
+    }}>
+      {/* Left: Logo and Title */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <img 
+          src="assets/deepfake.png" 
+          alt="Logo" 
+          style={{ 
+            width: '40px', 
+            height: '40px', 
+            borderRadius: '8px',
+            boxShadow: `0 0 20px rgba(${theme === 'green' ? '16, 185, 129' : '249, 115, 22'}, 0.3)`
+          }}
+        />
+        <div>
+          <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '700' }}>
+            DeepFake <span style={{ fontSize: '0.75rem', fontWeight: '400', marginLeft: '0.5rem', color: accentColor }}>Beta</span>
+          </h1>
+          <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.9 }}>
+            Advanced AI Detection
+          </p>
         </div>
+      </div>
+
+      {/* Right: Controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {/* Health Status */}
+        {renderHealthStatus && (
+          <div style={{ 
+            padding: '0.5rem 1rem', 
+            borderRadius: '6px', 
+            fontSize: '0.85rem', 
+            fontWeight: '500',
+            background: 'rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.15)'
+          }}>
+            {renderHealthStatus()}
+          </div>
+        )}
+
+        {/* Dark Mode Toggle */}
+        <button
+          onClick={() => setDarkMode(!darkMode)}
+          style={{
+            background: 'rgba(255, 255, 255, 0.15)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            color: 'white',
+            padding: '0.6rem 0.8rem',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.2s ease',
+            backdropFilter: 'blur(10px)'
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = 'rgba(255, 255, 255, 0.25)';
+            e.target.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = 'rgba(255, 255, 255, 0.15)';
+            e.target.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+          }}
+          title={darkMode ? 'Light Mode' : 'Dark Mode'}
+        >
+          {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
+
+        {/* Settings Toggle */}
+        <button
+          onClick={toggleSettings}
+          style={{
+            background: showSettings ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.15)',
+            border: showSettings ? `1px solid ${accentColor}` : '1px solid rgba(255, 255, 255, 0.2)',
+            color: 'white',
+            padding: '0.6rem 0.8rem',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.2s ease',
+            backdropFilter: 'blur(10px)'
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = 'rgba(255, 255, 255, 0.25)';
+            e.target.style.borderColor = accentColor;
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = showSettings ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.15)';
+            e.target.style.borderColor = showSettings ? accentColor : 'rgba(255, 255, 255, 0.2)';
+          }}
+          title="Settings"
+        >
+          {showSettings ? <X size={20} /> : <Settings size={20} />}
+        </button>
+
+        {/* Logout */}
+        <button
+          onClick={onLogout}
+          style={{
+            background: 'rgba(255, 255, 255, 0.15)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            color: 'white',
+            padding: '0.6rem 0.8rem',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.2s ease',
+            backdropFilter: 'blur(10px)'
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = 'rgba(255, 255, 255, 0.25)';
+            e.target.style.borderColor = '#ef4444';
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = 'rgba(255, 255, 255, 0.15)';
+            e.target.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+          }}
+          title="Logout"
+        >
+          <LogOut size={20} />
+        </button>
       </div>
     </header>
   );

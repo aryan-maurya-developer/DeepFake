@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const API_BASE_URL = window.location.hostname === 'localhost' && window.location.port === '3000'
-  ? 'http://localhost:8000'  // Local dev (npm start)
-  : '/api';                   // Docker (Nginx proxy)
+const API_BASE_URL = process.env.NODE_ENV === 'development'
+  ? ''
+  : process.env.REACT_APP_API_BASE_URL || '/api';
 
 const Login = ({ onLogin }) => {
     const [username, setUsername] = useState('');

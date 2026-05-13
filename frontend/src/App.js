@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Login from './components/Login';
 import Register from './components/Register';
+import Header from './components/Header';
 import './App.css';
 import {
     Chart as ChartJS,
@@ -26,9 +27,9 @@ ChartJS.register(
     ArcElement
 );
 
-const API_BASE_URL = window.location.hostname === 'localhost' && window.location.port === '3000'
-  ? 'http://localhost:8000'  // Local dev (npm start)
-  : '/api';                   // Docker (Nginx proxy)
+const API_BASE_URL = process.env.NODE_ENV === 'development'
+  ? ''
+  : process.env.REACT_APP_API_BASE_URL || '/api';
 
 // Protected Route Wrapper
 const ProtectedRoute = ({ children, isAuthenticated }) => {
@@ -47,6 +48,28 @@ function Dashboard({ onLogout }) {
     const [results, setResults] = useState(null);
     const [error, setError] = useState(null);
     const [systemHealth, setSystemHealth] = useState(null);
+    const [showSettings, setShowSettings] = useState(false);
+    const [darkMode, setDarkMode] = useState(() => {
+        return localStorage.getItem('darkMode') === 'true';
+    });
+    const [theme, setTheme] = useState(() => {
+        return localStorage.getItem('theme') || 'green';
+    });
+
+    // Apply dark mode and theme to document
+    useEffect(() => {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme);
+    }, [theme]);
+
+    useEffect(() => {
+        if (darkMode) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+        localStorage.setItem('darkMode', darkMode);
+    }, [darkMode]);
 
     useEffect(() => {
         fetch(`${API_BASE_URL}/health`)
@@ -219,37 +242,16 @@ function Dashboard({ onLogout }) {
 
     return (
         <div className="App">
-            <header style={{
-                padding: '1.5rem 2rem',
-                borderBottom: '1px solid rgba(255,255,255,0.05)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                background: 'rgba(15, 23, 42, 0.8)',
-                backdropFilter: 'blur(10px)',
-                position: 'sticky',
-                top: 0,
-                zIndex: 100
-            }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <div style={{
-                        width: '40px',
-                        height: '40px',
-                        background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 'bold',
-                        fontSize: '1.2rem'
-                    }}>DS</div>
-                    <h1 style={{ fontSize: '1.5rem', fontWeight: '700', letterSpacing: '-0.025em' }}>DeepFake</h1>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                    {renderHealthStatus()}
-                    <button onClick={onLogout} className="btn btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}>Logout</button>
-                </div>
-            </header>
+            <Header 
+                showSettings={showSettings}
+                toggleSettings={() => setShowSettings(!showSettings)}
+                darkMode={darkMode}
+                setDarkMode={setDarkMode}
+                theme={theme}
+                setTheme={setTheme}
+                onLogout={onLogout}
+                renderHealthStatus={renderHealthStatus}
+            />
 
             <main className="container">
                 <div style={{ textAlign: 'center', marginBottom: '3rem', paddingTop: '2rem' }}>
@@ -305,7 +307,10 @@ function Dashboard({ onLogout }) {
                                     <h3 style={{ fontSize: '1.1rem', fontWeight: '600' }}>Ready to Analyze</h3>
                                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{selectedFile.size > 1024 * 1024 ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB` : `${(selectedFile.size / 1024).toFixed(2)} KB`}</p>
                                 </div>
-                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                    <button onClick={handleDemoImage} className="btn btn-secondary">
+                                        🖼️ Demo Image
+                                    </button>
                                     <button onClick={handleDemoVideo} className="btn btn-secondary">
                                         🎬 Demo Video
                                     </button>
@@ -336,6 +341,102 @@ function Dashboard({ onLogout }) {
                     {renderResults()}
                 </div>
             </main>
+
+            {/* Settings Panel */}
+            {showSettings && (
+                <div style={{
+                    position: 'fixed',
+                    top: '70px',
+                    right: '20px',
+                    background: 'rgba(30, 41, 59, 0.95)',
+                    backdropFilter: 'blur(20px)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '12px',
+                    padding: '1.5rem',
+                    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+                    zIndex: 1000,
+                    minWidth: '300px',
+                    maxWidth: '400px'
+                }}>
+                    <h3 style={{ margin: '0 0 1rem 0', color: '#fff', fontSize: '1.1rem', fontWeight: '600' }}>Settings</h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        <div>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', color: '#cbd5e1', marginBottom: '0.5rem' }}>
+                                <input 
+                                    type="checkbox" 
+                                    checked={darkMode}
+                                    onChange={(e) => setDarkMode(e.target.checked)}
+                                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                                />
+                                <span>Dark Mode</span>
+                            </label>
+                        </div>
+                        
+                        <div>
+                            <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>
+                                Color Theme
+                            </label>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <button
+                                    onClick={() => setTheme('green')}
+                                    style={{
+                                        flex: 1,
+                                        padding: '0.75rem',
+                                        borderRadius: '8px',
+                                        border: theme === 'green' ? '2px solid #10b981' : '1px solid rgba(255, 255, 255, 0.2)',
+                                        background: theme === 'green' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                                        color: '#10b981',
+                                        cursor: 'pointer',
+                                        fontWeight: '600',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        if (theme !== 'green') e.target.style.background = 'rgba(255, 255, 255, 0.1)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        if (theme !== 'green') e.target.style.background = 'rgba(255, 255, 255, 0.05)';
+                                    }}
+                                >
+                                    🟢 Green
+                                </button>
+                                <button
+                                    onClick={() => setTheme('orange')}
+                                    style={{
+                                        flex: 1,
+                                        padding: '0.75rem',
+                                        borderRadius: '8px',
+                                        border: theme === 'orange' ? '2px solid #f97316' : '1px solid rgba(255, 255, 255, 0.2)',
+                                        background: theme === 'orange' ? 'rgba(249, 115, 22, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                                        color: '#f97316',
+                                        cursor: 'pointer',
+                                        fontWeight: '600',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        if (theme !== 'orange') e.target.style.background = 'rgba(255, 255, 255, 0.1)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        if (theme !== 'orange') e.target.style.background = 'rgba(255, 255, 255, 0.05)';
+                                    }}
+                                >
+                                    🟠 Orange
+                                </button>
+                            </div>
+                        </div>
+
+                        <div style={{ 
+                            padding: '0.75rem', 
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            borderRadius: '6px',
+                            fontSize: '0.85rem',
+                            color: '#94a3b8',
+                            border: '1px solid rgba(255, 255, 255, 0.1)'
+                        }}>
+                            <strong>API Status:</strong> {systemHealth?.overall_api_status || 'Checking...'}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <footer style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                 <p>&copy; {new Date().getFullYear()} DeepFake Platform. Open Source & Enterprise Ready.</p>
