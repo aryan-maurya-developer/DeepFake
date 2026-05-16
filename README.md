@@ -2,6 +2,8 @@
 
 ### Enterprise-grade deepfake detection across image, video, and audio
 
+> Local host-based execution, AI text/code detection, file safety scanning, website trust analysis, and dual SQLite + MongoDB persistence are now supported. See [docs/local_setup.md](docs/local_setup.md).
+
 DeepFake is a **modular, production-ready platform** designed to detect synthetic media with high confidence. It combines multiple state-of-the-art detection models into a unified **ensemble intelligence system**.
 
 Each model runs in an isolated Docker container, while a centralized **API Gateway** orchestrates inference, aggregates predictions, and produces a final verdict using advanced fusion strategies.

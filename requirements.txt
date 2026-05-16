@@ -10,3 +10,10 @@ seaborn
 repo-to-text
 kaggle 
 tqdm
+pymongo
+python-docx
+PyPDF2
+opencv-python-headless
+soundfile
+librosa
+python-whois

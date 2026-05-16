@@ -21,6 +21,7 @@ import time
 import base64
 import requests
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, List, Optional, Tuple
 from fastapi import (
     FastAPI,
@@ -55,16 +56,22 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from database import init_db, get_db, SessionLocal, AnalysisHistory
+from database import init_db, get_db
+from logging_utils import configure_logging
+from services.cache_service import analysis_cache, build_cache_key
+from services.ensemble_service import calculate_improved_ensemble
+from services.file_safety_service import file_safety_service
+from services.persistence_service import dual_persistence_service
+from services.preprocessing import media_preprocessor
+from services.runtime_service import get_runtime_profile
+from services.text_detection_service import text_detection_service
+from services.website_trust_service import website_trust_service
 
 # --- Logging Configuration ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s [%(filename)s:%(lineno)d] - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
+configure_logging()
 logger = logging.getLogger(__name__)
 rich_console = RichConsole(width=120)
+RUNTIME_PROFILE = get_runtime_profile()
 
 # --- Constants for Payload Keys and Media Handling ---
 MEDIA_TYPE_PAYLOAD_KEYS: Dict[str, str] = {
@@ -193,6 +200,10 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     username: Optional[str] = None
+
+
+class WebsiteTrustRequest(BaseModel):
+    url: str = Field(..., min_length=4, description="Website URL to inspect.")
 
 
 def verify_password(plain_password, hashed_password):
@@ -653,6 +664,7 @@ def calculate_ensemble_verdict_api(
     method: str,
     media_type: str,
     request_id: str,
+    preprocess_metadata: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, float, int, int, float, str]:
     valid_results = {
         k: v
@@ -678,6 +690,7 @@ def calculate_ensemble_verdict_api(
 
     actual_method_used = method
     ensemble_prob_fake_score: float = 0.5
+    stacking_probability: Optional[float] = None
 
     if total_valid_models == 1:
         logger.info(f"Request {request_id}: Only 1 valid model result. Forcing ensemble method to 'average'.")
@@ -704,37 +717,24 @@ def calculate_ensemble_verdict_api(
             imputed_features = imputer.transform(feature_df)
             scaled_features = scaler.transform(imputed_features)
 
-            ensemble_prob_fake_score = float(
-                learner.predict_proba(scaled_features)[0, 1]
-            )
+            stacking_probability = float(learner.predict_proba(scaled_features)[0, 1])
         else:
             logger.warning(
                 f"Request {request_id}: Stacking ensemble for '{media_type}' requested, but artifacts not loaded. Falling back to 'voting'."
             )
             actual_method_used = "voting"
-
-    if actual_method_used == "voting":
-        if total_valid_models > 0:
-            ensemble_prob_fake_score = float(base_fake_votes / total_valid_models)
-        else:
-            ensemble_prob_fake_score = 0.5
-    elif actual_method_used == "average":
-        probabilities = [
-            r_data["probability"]
-            for r_data in valid_results.values()
-            if r_data.get("probability") is not None
-        ]
-        if probabilities:
-            ensemble_prob_fake_score = float(sum(probabilities) / len(probabilities))
-        else:
-            ensemble_prob_fake_score = 0.5
-
-    verdict = "fake" if ensemble_prob_fake_score >= threshold else "real"
-    confidence_in_verdict = float(
-        ensemble_prob_fake_score
-        if verdict == "fake"
-        else (1.0 - ensemble_prob_fake_score)
+    ensemble_summary = calculate_improved_ensemble(
+        results=valid_results,
+        threshold=threshold,
+        method=actual_method_used,
+        media_type=media_type,
+        stacking_probability=stacking_probability,
+        preprocess_metadata=preprocess_metadata,
     )
+    verdict = ensemble_summary["verdict"]
+    confidence_in_verdict = float(ensemble_summary["confidence"])
+    ensemble_prob_fake_score = float(ensemble_summary["probability"])
+    actual_method_used = str(ensemble_summary["actual_method_used"])
 
     logger.info(
         f"Request {request_id} ({media_type}): Ensemble method '{actual_method_used}' "
@@ -848,7 +848,8 @@ async def health_check_api_endpoint(request: Request):
         system_health_report["overall_api_status"] = "degraded"
 
     system_health_report["request_id"] = req_id
-    system_health_report["processing_mode"] = "CPU-only"
+    system_health_report["processing_mode"] = RUNTIME_PROFILE["processing_mode"]
+    system_health_report["runtime"] = RUNTIME_PROFILE
     return system_health_report
 
 
@@ -967,18 +968,30 @@ async def predict_media_endpoint_api(request: Request, input_data: PredictInput)
 
     start_overall_time = time.time()
     model_query_results: Dict[str, Dict] = {}
-    for model_name in models_to_use_names:
-        if model_name not in model_endpoints_for_type:
-            logger.warning(
-                f"Request {req_id}: Model '{model_name}' was requested but is not configured for media_type '{media_type}'. Skipping."
-            )
-            model_query_results[model_name] = {
-                "error": f"Model '{model_name}' not configured for media_type '{media_type}'."
-            }
-            continue
-        model_query_results[model_name] = query_model_api(
-            model_name, media_type, encoded_media_content, input_data.threshold, req_id
-        )
+    futures = {}
+    max_workers = max(1, min(4, len(models_to_use_names)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for model_name in models_to_use_names:
+            if model_name not in model_endpoints_for_type:
+                logger.warning(
+                    f"Request {req_id}: Model '{model_name}' was requested but is not configured for media_type '{media_type}'. Skipping."
+                )
+                model_query_results[model_name] = {
+                    "error": f"Model '{model_name}' not configured for media_type '{media_type}'."
+                }
+                continue
+            futures[
+                executor.submit(
+                    query_model_api,
+                    model_name,
+                    media_type,
+                    encoded_media_content,
+                    input_data.threshold,
+                    req_id,
+                )
+            ] = model_name
+        for future in as_completed(futures):
+            model_query_results[futures[future]] = future.result()
 
     if not any("error" not in r_data for r_data in model_query_results.values()):
         logger.error(
@@ -1011,6 +1024,7 @@ async def predict_media_endpoint_api(request: Request, input_data: PredictInput)
         input_data.ensemble_method,
         media_type,
         req_id,
+        getattr(request.state, "preprocess_metadata", None),
     )
     total_processing_time = time.time() - start_overall_time
     response_payload = {
@@ -1026,29 +1040,30 @@ async def predict_media_endpoint_api(request: Request, input_data: PredictInput)
         "ensemble_method_requested": input_data.ensemble_method,
         "ensemble_method_used": actual_method_used,
         "model_results": model_query_results,
-        "processing_mode": "CPU-only",
+        "processing_mode": RUNTIME_PROFILE["processing_mode"],
+        "runtime": RUNTIME_PROFILE,
+        "preprocessing": getattr(request.state, "preprocess_metadata", None),
     }
 
-    # Save to database history
     try:
-        db = SessionLocal()
-        history_record = AnalysisHistory(
-            request_id=req_id,
-            username=None,  # TODO: Add current user if using auth on this endpoint
-            media_type=media_type,
-            media_name=None,  # Not available in this endpoint
-            verdict=verdict,
-            confidence=confidence,
-            ensemble_method=actual_method_used,
-            ensemble_score=ensemble_prob_fake,
-            inference_time=total_processing_time,
-            full_response=json.dumps(response_payload),
+        sync_status = dual_persistence_service.save_analysis(
+            {
+                "request_id": req_id,
+                "username": None,
+                "media_type": media_type,
+                "media_name": None,
+                "verdict": verdict,
+                "confidence": confidence,
+                "ensemble_method": actual_method_used,
+                "ensemble_score": ensemble_prob_fake,
+                "inference_time": total_processing_time,
+                "full_response": response_payload,
+            }
         )
-        db.add(history_record)
-        db.commit()
-        db.close()
+        response_payload["storage_sync"] = sync_status
     except Exception as db_err:
-        logger.warning(f"Request {req_id}: Failed to save to database: {db_err}")
+        logger.warning(f"Request {req_id}: Failed to persist analysis: {db_err}")
+        response_payload["storage_sync"] = {"sqlite": {"status": "failed"}, "mongodb": {"status": "failed"}}
 
     logger.info(
         f"Request {req_id} ({media_type}): Prediction complete in {total_processing_time:.2f}s. Verdict: '{verdict}', P(Fake): {ensemble_prob_fake:.4f} (Method: '{actual_method_used}')"
@@ -1114,13 +1129,14 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
 async def detect_media_endpoint_api_form(
     request: Request,
     file: UploadFile = File(...),
+    media_type: Optional[str] = Form(None),
     threshold: Optional[float] = Form(None),
     ensemble_method: Optional[str] = Form(None),
     models: Optional[str] = Form(None),
 ):
     req_id = request.state.request_id
     content_type = file.content_type
-    inferred_media_type = CONTENT_TYPE_TO_MEDIA_TYPE_MAP.get(content_type)
+    inferred_media_type = media_type or CONTENT_TYPE_TO_MEDIA_TYPE_MAP.get(content_type)
 
     # Fallback: infer media type from file extension when content_type is generic
     if not inferred_media_type and file.filename:
@@ -1228,10 +1244,29 @@ async def detect_media_endpoint_api_form(
                     detail=f"Error processing image file '{file.filename}': {e_img_gen}",
                 )
 
-        base64_media = base64.b64encode(file_contents).decode("utf-8")
         parsed_models_list = (
             [m.strip() for m in models.split(",") if m.strip()] if models else None
         )
+        preprocess_result = media_preprocessor.preprocess(
+            inferred_media_type, file_contents, file.filename
+        )
+        processed_content = preprocess_result.content
+        cache_key = build_cache_key(
+            inferred_media_type,
+            file.filename,
+            final_threshold,
+            final_ensemble_method,
+            parsed_models_list or "all",
+            processed_content,
+        )
+        cached_response = analysis_cache.get(cache_key)
+        if cached_response is not None:
+            cached_payload = dict(cached_response)
+            cached_payload["request_id"] = req_id
+            cached_payload["cache_hit"] = True
+            return cached_payload
+
+        base64_media = base64.b64encode(processed_content).decode("utf-8")
 
         predict_payload_data = {
             "media_type": inferred_media_type,
@@ -1248,6 +1283,7 @@ async def detect_media_endpoint_api_form(
         predict_payload_data[payload_key_for_media_data] = base64_media
 
         predict_input_object = PredictInput(**predict_payload_data)
+        request.state.preprocess_metadata = preprocess_result.metadata
         full_prediction_result = await predict_media_endpoint_api(
             request, predict_input_object
         )
@@ -1278,10 +1314,15 @@ async def detect_media_endpoint_api_form(
                 "ensemble_method_used", final_ensemble_method
             ),
             "model_results": full_prediction_result.get("model_results"),
-            "processing_mode": "CPU-only",
+            "processing_mode": RUNTIME_PROFILE["processing_mode"],
             "media_type_processed": inferred_media_type,
             "filename": file.filename,
+            "preprocessing": preprocess_result.metadata,
+            "runtime": RUNTIME_PROFILE,
+            "storage_sync": full_prediction_result.get("storage_sync"),
+            "cache_hit": False,
         }
+        analysis_cache.set(cache_key, ui_response)
         return ui_response
     except HTTPException:
         raise
@@ -1296,6 +1337,94 @@ async def detect_media_endpoint_api_form(
     finally:
         if "file" in locals() and file:
             await file.close()
+
+
+@app.post("/analyze/text", tags=["Extended Analysis"])
+async def analyze_text_content(
+    request: Request,
+    text: Optional[str] = Form(None),
+    filename: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+):
+    req_id = request.state.request_id
+    upload_bytes = await file.read() if file else None
+    filename = filename or (file.filename if file else "input.txt")
+    extracted_text, content_kind = text_detection_service.extract_text(
+        filename=filename,
+        payload=text,
+        upload_bytes=upload_bytes,
+    )
+    if not extracted_text.strip():
+        raise HTTPException(status_code=400, detail="No readable text content was provided.")
+    result = text_detection_service.analyze(extracted_text, content_kind)
+    response = {
+        "request_id": req_id,
+        "content_kind": content_kind,
+        "label": result.label,
+        "ai_probability": result.probability_ai,
+        "human_probability": round(1.0 - result.probability_ai, 4),
+        "confidence": result.confidence,
+        "explanation": result.explanation,
+        "features": result.features,
+        "preview": result.extracted_text[:1200],
+    }
+    response["storage_sync"] = dual_persistence_service.save_analysis(
+        {
+            "request_id": req_id,
+            "media_type": "text",
+            "media_name": filename,
+            "verdict": "fake" if result.probability_ai >= 0.5 else "real",
+            "confidence": result.confidence,
+            "ensemble_method": "stylometry",
+            "ensemble_score": result.probability_ai,
+            "inference_time": None,
+            "full_response": response,
+        }
+    )
+    return response
+
+
+@app.post("/analyze/file-safety", tags=["Extended Analysis"])
+async def analyze_file_safety(request: Request, file: UploadFile = File(...)):
+    req_id = request.state.request_id
+    content = await file.read()
+    result = file_safety_service.analyze(file.filename, content)
+    response = {"request_id": req_id, **result}
+    response["storage_sync"] = dual_persistence_service.save_analysis(
+        {
+            "request_id": req_id,
+            "media_type": "file_safety",
+            "media_name": file.filename,
+            "verdict": "fake" if result["risk_score"] >= 45 else "real",
+            "confidence": min(0.99, max(0.1, result["risk_score"] / 100)),
+            "ensemble_method": "static_risk",
+            "ensemble_score": result["risk_score"] / 100,
+            "inference_time": None,
+            "full_response": response,
+        }
+    )
+    return response
+
+
+@app.post("/analyze/website", tags=["Extended Analysis"])
+async def analyze_website_trust(request: Request, payload: WebsiteTrustRequest):
+    req_id = request.state.request_id
+    result = website_trust_service.analyze(payload.url)
+    response = {"request_id": req_id, **result}
+    response["storage_sync"] = dual_persistence_service.save_analysis(
+        {
+            "request_id": req_id,
+            "media_type": "website",
+            "media_name": payload.url,
+            "verdict": "real" if result["trust_score"] >= 50 else "fake",
+            "confidence": min(0.99, max(0.1, abs(result["trust_score"] - 50) / 50)),
+            "ensemble_method": "trust_score",
+            "ensemble_score": result["trust_score"] / 100,
+            "inference_time": None,
+            "full_response": response,
+        }
+    )
+    return response
 
 
 # --- History Endpoints ---

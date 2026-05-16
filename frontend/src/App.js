@@ -1,481 +1,650 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
+import {
+  ShieldCheck,
+  ScanSearch,
+  FileCode2,
+  Globe2,
+  AlertTriangle,
+  Activity,
+  Database,
+  Cpu,
+  Moon,
+  Sun,
+  LogOut,
+  Upload,
+  Sparkles,
+} from 'lucide-react';
+import { Doughnut } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend,
+} from 'chart.js';
 import Login from './components/Login';
 import Register from './components/Register';
-import Header from './components/Header';
 import './App.css';
-import {
-    Chart as ChartJS,
-    CategoryScale,
-    LinearScale,
-    BarElement,
-    Title,
-    Tooltip,
-    Legend,
-    ArcElement,
-} from 'chart.js';
-import { Bar, Doughnut } from 'react-chartjs-2';
 
-// Register ChartJS components
-ChartJS.register(
-    CategoryScale,
-    LinearScale,
-    BarElement,
-    Title,
-    Tooltip,
-    Legend,
-    ArcElement
-);
+ChartJS.register(ArcElement, Tooltip, Legend);
 
 const API_BASE_URL = process.env.NODE_ENV === 'development'
   ? ''
   : process.env.REACT_APP_API_BASE_URL || '/api';
 
-// Protected Route Wrapper
 const ProtectedRoute = ({ children, isAuthenticated }) => {
-    const location = useLocation();
-    if (!isAuthenticated) {
-        return <Navigate to="/login" state={{ from: location }} replace />;
-    }
-    return children;
+  const location = useLocation();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  return children;
 };
 
-function Dashboard({ onLogout }) {
-    const [selectedFile, setSelectedFile] = useState(null);
-    const [previewUrl, setPreviewUrl] = useState(null);
-    const [mediaType, setMediaType] = useState('image');
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [results, setResults] = useState(null);
-    const [error, setError] = useState(null);
-    const [systemHealth, setSystemHealth] = useState(null);
-    const [showSettings, setShowSettings] = useState(false);
-    const [darkMode, setDarkMode] = useState(() => {
-        return localStorage.getItem('darkMode') === 'true';
-    });
-    const [theme, setTheme] = useState(() => {
-        return localStorage.getItem('theme') || 'green';
-    });
+const percent = (value) => `${Math.round((value || 0) * 100)}%`;
 
-    // Apply dark mode and theme to document
-    useEffect(() => {
-        document.documentElement.setAttribute('data-theme', theme);
-        localStorage.setItem('theme', theme);
-    }, [theme]);
+const ConfidenceRing = ({ value, label, accent = '#1e9bff' }) => {
+  const data = {
+    labels: ['Score', 'Remaining'],
+    datasets: [
+      {
+        data: [Math.max(0, Math.min(100, value)), Math.max(0, 100 - value)],
+        backgroundColor: [accent, 'rgba(148, 163, 184, 0.15)'],
+        borderWidth: 0,
+      },
+    ],
+  };
 
-    useEffect(() => {
-        if (darkMode) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
+  return (
+    <div className="confidence-ring">
+      <Doughnut
+        data={data}
+        options={{
+          cutout: '72%',
+          plugins: { legend: { display: false } },
+          maintainAspectRatio: false,
+        }}
+      />
+      <div className="confidence-ring__content">
+        <strong>{Math.round(value)}%</strong>
+        <span>{label}</span>
+      </div>
+    </div>
+  );
+};
+
+const ResultList = ({ items }) => (
+  <div className="stack-sm">
+    {items.map((item) => (
+      <div key={item.title} className="insight-row">
+        <strong>{item.title}</strong>
+        <span>{item.value}</span>
+      </div>
+    ))}
+  </div>
+);
+
+function AppShell({ token, onLogout }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') !== 'false');
+  const [systemHealth, setSystemHealth] = useState(null);
+  const [loadingHealth, setLoadingHealth] = useState(true);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+    localStorage.setItem('darkMode', String(darkMode));
+  }, [darkMode]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadHealth = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/health`);
+        const data = await response.json();
+        if (mounted) {
+          setSystemHealth(data);
         }
-        localStorage.setItem('darkMode', darkMode);
-    }, [darkMode]);
-
-    useEffect(() => {
-        fetch(`${API_BASE_URL}/health`)
-            .then((res) => res.json())
-            .then((data) => setSystemHealth(data))
-            .catch((err) => console.error('Health check failed:', err));
-    }, []);
-
-    const handleFileChange = (event) => {
-        const file = event.target.files[0];
-        if (file) {
-            setSelectedFile(file);
-            setResults(null);
-            setError(null);
-            const objectUrl = URL.createObjectURL(file);
-            setPreviewUrl(objectUrl);
-            if (file.type.startsWith('video/')) {
-                setMediaType('video');
-            } else {
-                setMediaType('image');
-            }
+      } catch (error) {
+        if (mounted) {
+          setSystemHealth({ overall_api_status: 'offline', media_type_details: {} });
         }
-    };
-
-    const handleDemoImage = () => {
-        fetch('/demo_image.jpg')
-            .then((res) => res.blob())
-            .then((blob) => {
-                const file = new File([blob], 'demo_image.jpg', { type: 'image/jpeg' });
-                setSelectedFile(file);
-                setPreviewUrl('/demo_image.jpg');
-                setMediaType('image');
-                setResults(null);
-                setError(null);
-            })
-            .catch((err) => setError('Failed to load demo image'));
-    };
-
-    const handleDemoVideo = () => {
-        fetch('/demo_video.mp4')
-            .then((res) => res.blob())
-            .then((blob) => {
-                const file = new File([blob], 'demo_video.mp4', { type: 'video/mp4' });
-                setSelectedFile(file);
-                setPreviewUrl('/demo_video.mp4');
-                setMediaType('video');
-                setResults(null);
-                setError(null);
-            })
-            .catch((err) => setError('Failed to load demo video'));
-    };
-
-    const handleDemoAudio = () => {
-        fetch('/demo_audio.wav')
-            .then((res) => res.blob())
-            .then((blob) => {
-                const file = new File([blob], 'demo_audio.wav', { type: 'audio/wav' });
-                setSelectedFile(file);
-                setPreviewUrl('/demo_audio.wav');
-                setMediaType('audio');
-                setResults(null);
-                setError(null);
-            })
-            .catch((err) => setError('Failed to load demo audio'));
-    };
-    const handleAnalyze = async () => {
-        if (!selectedFile) return;
-        setIsAnalyzing(true);
-        setError(null);
-        setResults(null);
-
-        const formData = new FormData();
-        formData.append('file', selectedFile);
-        formData.append('media_type', mediaType);
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/detect`, {
-                method: 'POST',
-                body: formData,
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Analysis failed');
-            }
-
-            const data = await response.json();
-            setResults(data);
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setIsAnalyzing(false);
+      } finally {
+        if (mounted) {
+          setLoadingHealth(false);
         }
+      }
     };
-
-    const renderHealthStatus = () => {
-        if (!systemHealth) return <span className="text-secondary">Checking system...</span>;
-        const status = systemHealth.overall_api_status || 'Unknown';
-        const color = status === 'healthy' ? 'var(--success)' : 'var(--danger)';
-        return (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: color, boxShadow: `0 0 8px ${color}` }}></span>
-                <span style={{ color: color, fontWeight: 600, fontSize: '0.875rem' }}>{status.toUpperCase()}</span>
-            </div>
-        );
+    loadHealth();
+    return () => {
+      mounted = false;
     };
+  }, []);
 
-    const renderResults = () => {
-        if (!results) return null;
-        const isFake = results.is_likely_deepfake;
-        const confidence = (results.deepfake_probability * 100).toFixed(1);
-        const verdictColor = isFake ? 'var(--danger)' : 'var(--success)';
-        const verdictText = isFake ? 'FAKE' : 'REAL';
+  const navItems = [
+    { to: '/', label: 'Media Detection', icon: <ScanSearch size={18} /> },
+    { to: '/text-detector', label: 'AI Text & Code', icon: <FileCode2 size={18} /> },
+    { to: '/file-safety', label: 'File Safety', icon: <ShieldCheck size={18} /> },
+    { to: '/website-trust', label: 'Website Trust', icon: <Globe2 size={18} /> },
+  ];
 
-        const barData = {
-            labels: Object.keys(results.model_results || {}),
-            datasets: [
-                {
-                    label: 'Fake Probability',
-                    data: Object.values(results.model_results || {}).map(r => r.probability ? r.probability * 100 : 0),
-                    backgroundColor: 'rgba(59, 130, 246, 0.6)',
-                    borderColor: 'rgba(59, 130, 246, 1)',
-                    borderWidth: 1,
-                    borderRadius: 4,
-                },
-            ],
-        };
+  const stats = useMemo(() => {
+    const overall = systemHealth?.overall_api_status || 'unknown';
+    const runtime = systemHealth?.runtime?.processing_mode || 'Pending';
+    return [
+      { title: 'Platform Status', value: loadingHealth ? 'Checking...' : overall.toUpperCase() },
+      { title: 'Runtime', value: runtime },
+      { title: 'Storage', value: 'SQLite + MongoDB backup ready' },
+    ];
+  }, [systemHealth, loadingHealth]);
 
-        const doughnutData = {
-            labels: ['Real', 'Fake'],
-            datasets: [
-                {
-                    data: [100 - (results.deepfake_probability * 100), results.deepfake_probability * 100],
-                    backgroundColor: ['rgba(16, 185, 129, 0.6)', 'rgba(239, 68, 68, 0.6)'],
-                    borderColor: ['rgba(16, 185, 129, 1)', 'rgba(239, 68, 68, 1)'],
-                    borderWidth: 1,
-                },
-            ],
-        };
-
-        return (
-            <div className="animate-fade-in" style={{ marginTop: '2rem' }}>
-                <div className="card" style={{ textAlign: 'center', marginBottom: '2rem', borderTop: `4px solid ${verdictColor}` }}>
-                    <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Analysis Verdict</h2>
-                    <div style={{ fontSize: '3rem', fontWeight: '800', color: verdictColor, textShadow: `0 0 20px ${verdictColor}40` }}>
-                        {verdictText}
-                    </div>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>
-                        Confidence: <strong style={{ color: 'var(--text-primary)' }}>{confidence}%</strong>
-                    </p>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-                    <div className="card">
-                        <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem' }}>Ensemble Score</h3>
-                        <div style={{ height: '250px', display: 'flex', justifyContent: 'center' }}>
-                            <Doughnut data={doughnutData} options={{ maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8' } } } }} />
-                        </div>
-                    </div>
-                    <div className="card">
-                        <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem' }}>Individual Model Scores</h3>
-                        <div style={{ height: '250px' }}>
-                            <Bar data={barData} options={{ maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } }, x: { grid: { display: false }, ticks: { color: '#94a3b8' } } }, plugins: { legend: { display: false } } }} />
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    return (
-        <div className="App">
-            <Header 
-                showSettings={showSettings}
-                toggleSettings={() => setShowSettings(!showSettings)}
-                darkMode={darkMode}
-                setDarkMode={setDarkMode}
-                theme={theme}
-                setTheme={setTheme}
-                onLogout={onLogout}
-                renderHealthStatus={renderHealthStatus}
-            />
-
-            <main className="container">
-                <div style={{ textAlign: 'center', marginBottom: '3rem', paddingTop: '2rem' }}>
-                    <h2 className="text-gradient" style={{ fontSize: '3rem', fontWeight: '800', marginBottom: '1rem', lineHeight: 1.2 }}>
-                        Detect Deepfakes with<br />Enterprise Precision
-                    </h2>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '1.25rem', maxWidth: '600px', margin: '0 auto' }}>
-                        Upload your media to analyze it against our multi-model ensemble engine.
-                    </p>
-                </div>
-
-                <div className="card" style={{ maxWidth: '800px', margin: '0 auto', padding: '3rem', borderStyle: 'dashed', borderWidth: '2px', borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(30, 41, 59, 0.5)' }}>
-                    <input
-                        type="file"
-                        id="file-upload"
-                        style={{ display: 'none' }}
-                        onChange={handleFileChange}
-                        accept="image/*,video/*"
-                    />
-                    <label htmlFor="file-upload" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }}>
-                        <div style={{
-                            width: '64px',
-                            height: '64px',
-                            borderRadius: '50%',
-                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            marginBottom: '1.5rem',
-                            color: 'var(--accent-primary)'
-                        }}>
-                            <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                        </div>
-                        <span style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem' }}>
-                            {selectedFile ? selectedFile.name : 'Click to Upload or Drag & Drop'}
-                        </span>
-                        <span style={{ color: 'var(--text-secondary)' }}>Supported formats: JPG, PNG, MP4, AVI</span>
-                    </label>
-                </div>
-
-                {previewUrl && (
-                    <div className="animate-fade-in" style={{ marginTop: '2rem', maxWidth: '800px', margin: '2rem auto 0' }}>
-                        <div className="card" style={{ overflow: 'hidden', padding: 0 }}>
-                            <div style={{ position: 'relative', width: '100%', height: '400px', backgroundColor: '#000' }}>
-                                {mediaType === 'video' ? (
-                                    <video src={previewUrl} controls style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                                ) : (
-                                    <img src={previewUrl} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                                )}
-                            </div>
-                            <div style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-secondary)' }}>
-                                <div>
-                                    <h3 style={{ fontSize: '1.1rem', fontWeight: '600' }}>Ready to Analyze</h3>
-                                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{selectedFile.size > 1024 * 1024 ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB` : `${(selectedFile.size / 1024).toFixed(2)} KB`}</p>
-                                </div>
-                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                    <button onClick={handleDemoImage} className="btn btn-secondary">
-                                        🖼️ Demo Image
-                                    </button>
-                                    <button onClick={handleDemoVideo} className="btn btn-secondary">
-                                        🎬 Demo Video
-                                    </button>
-                                    <button onClick={handleDemoAudio} className="btn btn-secondary">
-                                        🎵 Demo Audio
-                                    </button>
-                                    <button
-                                        className="btn btn-primary"
-                                        onClick={handleAnalyze}
-                                        disabled={isAnalyzing}
-                                        style={{ opacity: isAnalyzing ? 0.7 : 1, minWidth: '150px' }}
-                                    >
-                                        {isAnalyzing ? 'Processing...' : 'Run DeepFake'}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {error && (
-                    <div className="animate-fade-in" style={{ maxWidth: '800px', margin: '2rem auto 0', padding: '1rem', borderRadius: 'var(--radius-md)', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        {error}
-                    </div>
-                )}
-
-                <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-                    {renderResults()}
-                </div>
-            </main>
-
-            {/* Settings Panel */}
-            {showSettings && (
-                <div style={{
-                    position: 'fixed',
-                    top: '70px',
-                    right: '20px',
-                    background: 'rgba(30, 41, 59, 0.95)',
-                    backdropFilter: 'blur(20px)',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                    borderRadius: '12px',
-                    padding: '1.5rem',
-                    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
-                    zIndex: 1000,
-                    minWidth: '300px',
-                    maxWidth: '400px'
-                }}>
-                    <h3 style={{ margin: '0 0 1rem 0', color: '#fff', fontSize: '1.1rem', fontWeight: '600' }}>Settings</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                        <div>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', color: '#cbd5e1', marginBottom: '0.5rem' }}>
-                                <input 
-                                    type="checkbox" 
-                                    checked={darkMode}
-                                    onChange={(e) => setDarkMode(e.target.checked)}
-                                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                                />
-                                <span>Dark Mode</span>
-                            </label>
-                        </div>
-                        
-                        <div>
-                            <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: '500', display: 'block', marginBottom: '0.5rem' }}>
-                                Color Theme
-                            </label>
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                <button
-                                    onClick={() => setTheme('green')}
-                                    style={{
-                                        flex: 1,
-                                        padding: '0.75rem',
-                                        borderRadius: '8px',
-                                        border: theme === 'green' ? '2px solid #10b981' : '1px solid rgba(255, 255, 255, 0.2)',
-                                        background: theme === 'green' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                                        color: '#10b981',
-                                        cursor: 'pointer',
-                                        fontWeight: '600',
-                                        transition: 'all 0.2s ease'
-                                    }}
-                                    onMouseEnter={(e) => {
-                                        if (theme !== 'green') e.target.style.background = 'rgba(255, 255, 255, 0.1)';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                        if (theme !== 'green') e.target.style.background = 'rgba(255, 255, 255, 0.05)';
-                                    }}
-                                >
-                                    🟢 Green
-                                </button>
-                                <button
-                                    onClick={() => setTheme('orange')}
-                                    style={{
-                                        flex: 1,
-                                        padding: '0.75rem',
-                                        borderRadius: '8px',
-                                        border: theme === 'orange' ? '2px solid #f97316' : '1px solid rgba(255, 255, 255, 0.2)',
-                                        background: theme === 'orange' ? 'rgba(249, 115, 22, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                                        color: '#f97316',
-                                        cursor: 'pointer',
-                                        fontWeight: '600',
-                                        transition: 'all 0.2s ease'
-                                    }}
-                                    onMouseEnter={(e) => {
-                                        if (theme !== 'orange') e.target.style.background = 'rgba(255, 255, 255, 0.1)';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                        if (theme !== 'orange') e.target.style.background = 'rgba(255, 255, 255, 0.05)';
-                                    }}
-                                >
-                                    🟠 Orange
-                                </button>
-                            </div>
-                        </div>
-
-                        <div style={{ 
-                            padding: '0.75rem', 
-                            background: 'rgba(255, 255, 255, 0.05)',
-                            borderRadius: '6px',
-                            fontSize: '0.85rem',
-                            color: '#94a3b8',
-                            border: '1px solid rgba(255, 255, 255, 0.1)'
-                        }}>
-                            <strong>API Status:</strong> {systemHealth?.overall_api_status || 'Checking...'}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <footer style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                <p>&copy; {new Date().getFullYear()} DeepFake Platform. Open Source & Enterprise Ready.</p>
-            </footer>
+  return (
+    <div className="workspace-shell">
+      <aside className="workspace-sidebar">
+        <div className="brand-block">
+          <div className="brand-mark">
+            <img src="/assets/deepfake.png" alt="DeepShield logo" />
+          </div>
+          <div>
+            <h1>AmsR DeepShield</h1>
+            <p>Forensic AI Operations</p>
+          </div>
         </div>
-    );
+
+        <nav className="sidebar-nav">
+          {navItems.map((item) => (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={`sidebar-link ${location.pathname === item.to ? 'active' : ''}`}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </Link>
+          ))}
+        </nav>
+
+        <div className="sidebar-card">
+          <div className="section-label">Operations</div>
+          <ResultList items={stats} />
+        </div>
+
+        <div className="sidebar-actions">
+          <button className="icon-button" onClick={() => setDarkMode((value) => !value)} title="Toggle theme">
+            {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          <button className="icon-button" onClick={() => { onLogout(); navigate('/login'); }} title="Logout">
+            <LogOut size={18} />
+          </button>
+        </div>
+      </aside>
+
+      <main className="workspace-main">
+        <header className="hero-strip">
+          <div>
+            <div className="eyebrow">Unified Security Intelligence</div>
+            <h2>Analyze media, documents, files, and websites from one response surface.</h2>
+          </div>
+          <div className="hero-pill-group">
+            <span className="hero-pill"><Activity size={16} /> Backward-compatible API</span>
+            <span className="hero-pill"><Cpu size={16} /> GPU-aware runtime</span>
+            <span className="hero-pill"><Database size={16} /> Dual persistence</span>
+          </div>
+        </header>
+
+        <Routes>
+          <Route path="/" element={<MediaDetectionPanel token={token} systemHealth={systemHealth} />} />
+          <Route path="/text-detector" element={<TextDetectorPanel />} />
+          <Route path="/file-safety" element={<FileSafetyPanel />} />
+          <Route path="/website-trust" element={<WebsiteTrustPanel />} />
+        </Routes>
+      </main>
+    </div>
+  );
 }
 
-function App() {
-    const [isAuthenticated, setIsAuthenticated] = useState(() => {
-        return localStorage.getItem('token') !== null;
-    });
+function MediaDetectionPanel({ systemHealth }) {
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [mediaType, setMediaType] = useState('image');
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
 
-    const handleLogin = (token) => {
-        localStorage.setItem('token', token);
-        setIsAuthenticated(true);
-    };
+  const handleFileChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setSelectedFile(file);
+    setError('');
+    setResult(null);
+    const inferredType = file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : 'image';
+    setMediaType(inferredType);
+    setPreviewUrl(URL.createObjectURL(file));
+  };
 
-    const handleLogout = () => {
-        localStorage.clear();
-        setIsAuthenticated(false);
-    };
+  const submit = async () => {
+    if (!selectedFile) return;
+    setLoading(true);
+    setError('');
+    setResult(null);
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('media_type', mediaType);
+    try {
+      const response = await fetch(`${API_BASE_URL}/detect`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || 'Detection failed.');
+      }
+      setResult(data);
+    } catch (submissionError) {
+      setError(submissionError.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return (
-        <Router>
-            <Routes>
-                <Route path="/login" element={<Login onLogin={handleLogin} />} />
-                <Route path="/register" element={<Register onLogin={handleLogin} />} />
-                <Route
-                    path="/"
-                    element={
-                        <ProtectedRoute isAuthenticated={isAuthenticated}>
-                            <Dashboard onLogout={handleLogout} />
-                        </ProtectedRoute>
-                    }
-                />
-            </Routes>
-        </Router>
-    );
+  const modelResults = result?.model_results
+    ? Object.entries(result.model_results).filter(([, value]) => value && !value.error)
+    : [];
+
+  return (
+    <section className="panel-grid">
+      <div className="panel-card feature-panel">
+        <div className="panel-heading">
+          <div>
+            <div className="section-label">Primary Workflow</div>
+            <h3>Media Detection</h3>
+          </div>
+          <span className="status-badge">{systemHealth?.overall_api_status || 'checking'}</span>
+        </div>
+
+        <div className="upload-zone">
+          <Upload size={24} />
+          <p>Drop an image, video, or audio file to run the enhanced ensemble pipeline.</p>
+          <input type="file" onChange={handleFileChange} />
+        </div>
+
+        <div className="segmented-control">
+          {['image', 'video', 'audio'].map((value) => (
+            <button
+              key={value}
+              className={mediaType === value ? 'active' : ''}
+              onClick={() => setMediaType(value)}
+              type="button"
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+
+        {previewUrl && (
+          <div className="preview-card">
+            {mediaType === 'image' && <img src={previewUrl} alt="Preview" />}
+            {mediaType === 'video' && <video src={previewUrl} controls />}
+            {mediaType === 'audio' && <audio src={previewUrl} controls />}
+          </div>
+        )}
+
+        <button className="cta-button" type="button" disabled={!selectedFile || loading} onClick={submit}>
+          {loading ? 'Analyzing...' : 'Run Detection'}
+        </button>
+
+        {error && <div className="error-banner">{error}</div>}
+      </div>
+
+      <div className="panel-card result-panel">
+        {!result && (
+          <div className="empty-state">
+            <Sparkles size={24} />
+            <h3>Results appear here</h3>
+            <p>The upgraded pipeline adds preprocessing metadata, cache status, confidence calibration, and storage sync visibility.</p>
+          </div>
+        )}
+
+        {result && (
+          <>
+            <div className="panel-heading">
+              <div>
+                <div className="section-label">Detection Outcome</div>
+                <h3>{result.is_likely_deepfake ? 'Likely AI-generated media' : 'Likely authentic media'}</h3>
+              </div>
+              <span className={`status-badge ${result.is_likely_deepfake ? 'danger' : 'success'}`}>
+                {result.is_likely_deepfake ? 'High risk' : 'Low risk'}
+              </span>
+            </div>
+
+            <div className="metrics-grid">
+              <ConfidenceRing value={(result.deepfake_probability || 0) * 100} label="Fake probability" accent={result.is_likely_deepfake ? '#ff5c6c' : '#18c37e'} />
+              <div className="stack-sm">
+                <ResultList items={[
+                  { title: 'Media type', value: result.media_type_processed || mediaType },
+                  { title: 'Models used', value: String(result.model_count || 0) },
+                  { title: 'Votes', value: `${result.fake_votes || 0} fake / ${result.real_votes || 0} real` },
+                  { title: 'Cache', value: result.cache_hit ? 'Hit' : 'Miss' },
+                ]} />
+              </div>
+            </div>
+
+            <div className="subpanel">
+              <h4>Preprocessing</h4>
+              <ResultList items={Object.entries(result.preprocessing || {}).slice(0, 5).map(([key, value]) => ({
+                title: key.replaceAll('_', ' '),
+                value: typeof value === 'object' ? JSON.stringify(value) : String(value),
+              }))} />
+            </div>
+
+            <div className="subpanel">
+              <h4>Model outputs</h4>
+              <div className="stack-sm">
+                {modelResults.map(([name, value]) => (
+                  <div className="probability-row" key={name}>
+                    <div>
+                      <strong>{name}</strong>
+                      <span>{percent(value.probability)}</span>
+                    </div>
+                    <div className="progress-track">
+                      <div className="progress-fill" style={{ width: `${Math.round((value.probability || 0) * 100)}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
 }
 
-export default App;
+function TextDetectorPanel() {
+  const [text, setText] = useState('');
+  const [file, setFile] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  const submit = async () => {
+    setLoading(true);
+    setError('');
+    const formData = new FormData();
+    if (text) formData.append('text', text);
+    if (file) formData.append('file', file);
+    if (file?.name) formData.append('filename', file.name);
+    try {
+      const response = await fetch(`${API_BASE_URL}/analyze/text`, { method: 'POST', body: formData });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Text analysis failed.');
+      setResult(data);
+    } catch (submissionError) {
+      setError(submissionError.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="panel-grid">
+      <div className="panel-card feature-panel">
+        <div className="panel-heading">
+          <div>
+            <div className="section-label">New Feature</div>
+            <h3>AI Text / Code Detector</h3>
+          </div>
+        </div>
+        <textarea
+          className="editor-surface"
+          placeholder="Paste text, markdown, or source code here..."
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+        />
+        <label className="file-input-row">
+          <Upload size={16} />
+          <span>{file ? file.name : 'Upload TXT, MD, PDF, DOCX, or source code file'}</span>
+          <input type="file" hidden onChange={(event) => setFile(event.target.files?.[0] || null)} />
+        </label>
+        <button className="cta-button" type="button" disabled={loading || (!text && !file)} onClick={submit}>
+          {loading ? 'Analyzing...' : 'Analyze Writing Pattern'}
+        </button>
+        {error && <div className="error-banner">{error}</div>}
+      </div>
+
+      <div className="panel-card result-panel">
+        {!result && <div className="empty-state"><FileCode2 size={24} /><h3>Stylometry insights</h3><p>Probability, confidence, and explanation will appear here.</p></div>}
+        {result && (
+          <>
+            <div className="panel-heading">
+              <div>
+                <div className="section-label">{result.content_kind}</div>
+                <h3>{result.label}</h3>
+              </div>
+            </div>
+            <div className="metrics-grid">
+              <ConfidenceRing value={(result.ai_probability || 0) * 100} label="AI probability" accent="#8b5cf6" />
+              <div className="stack-sm">
+                <ResultList items={[
+                  { title: 'Confidence', value: percent(result.confidence) },
+                  { title: 'Human probability', value: percent(result.human_probability) },
+                  { title: 'Storage sync', value: result.storage_sync?.verified ? 'Verified' : 'Partial' },
+                ]} />
+              </div>
+            </div>
+            <div className="subpanel">
+              <h4>Explanation</h4>
+              <ul className="bullet-list">
+                {(result.explanation || []).map((line) => <li key={line}>{line}</li>)}
+              </ul>
+            </div>
+            <div className="subpanel">
+              <h4>Feature summary</h4>
+              <ResultList items={Object.entries(result.features || {}).map(([key, value]) => ({
+                title: key.replaceAll('_', ' '),
+                value: String(value),
+              }))} />
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function FileSafetyPanel() {
+  const [file, setFile] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  const submit = async () => {
+    if (!file) return;
+    setLoading(true);
+    setError('');
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await fetch(`${API_BASE_URL}/analyze/file-safety`, { method: 'POST', body: formData });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'File safety analysis failed.');
+      setResult(data);
+    } catch (submissionError) {
+      setError(submissionError.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="panel-grid">
+      <div className="panel-card feature-panel">
+        <div className="panel-heading">
+          <div>
+            <div className="section-label">Upload Guard</div>
+            <h3>File Safety Analyzer</h3>
+          </div>
+        </div>
+        <label className="upload-zone compact">
+          <AlertTriangle size={24} />
+          <p>{file ? file.name : 'Upload any file to check extensions, macros, signatures, entropy, and suspicious script patterns.'}</p>
+          <input type="file" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+        </label>
+        <button className="cta-button" type="button" disabled={!file || loading} onClick={submit}>
+          {loading ? 'Scanning...' : 'Scan File'}
+        </button>
+        {error && <div className="error-banner">{error}</div>}
+      </div>
+
+      <div className="panel-card result-panel">
+        {!result && <div className="empty-state"><ShieldCheck size={24} /><h3>Safety report</h3><p>Risk score, quarantine recommendation, and explanations will appear here.</p></div>}
+        {result && (
+          <>
+            <div className="panel-heading">
+              <div>
+                <div className="section-label">{result.mime_type}</div>
+                <h3>{result.risk_level}</h3>
+              </div>
+              <span className={`status-badge ${result.quarantine_recommended ? 'danger' : 'success'}`}>
+                {result.quarantine_recommended ? 'Quarantine suggested' : 'Usable'}
+              </span>
+            </div>
+            <div className="metrics-grid">
+              <ConfidenceRing value={result.risk_score || 0} label="Risk score" accent={result.risk_score >= 45 ? '#ff5c6c' : '#f59e0b'} />
+              <div className="stack-sm">
+                <ResultList items={[
+                  { title: 'Extension', value: result.extension || 'unknown' },
+                  { title: 'Safe', value: result.is_safe ? 'Yes' : 'No' },
+                  { title: 'Entropy', value: String(result.entropy) },
+                ]} />
+              </div>
+            </div>
+            <div className="subpanel">
+              <h4>Explanation</h4>
+              <ul className="bullet-list">
+                {(result.explanation || []).map((line) => <li key={line}>{line}</li>)}
+              </ul>
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function WebsiteTrustPanel() {
+  const [url, setUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  const submit = async () => {
+    if (!url) return;
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`${API_BASE_URL}/analyze/website`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Website trust analysis failed.');
+      setResult(data);
+    } catch (submissionError) {
+      setError(submissionError.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="panel-grid">
+      <div className="panel-card feature-panel">
+        <div className="panel-heading">
+          <div>
+            <div className="section-label">Trust Intelligence</div>
+            <h3>Website Trust / Scam Detection</h3>
+          </div>
+        </div>
+        <input
+          className="editor-input"
+          type="url"
+          placeholder="https://example.com"
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+        />
+        <button className="cta-button" type="button" disabled={!url || loading} onClick={submit}>
+          {loading ? 'Analyzing...' : 'Inspect Website'}
+        </button>
+        {error && <div className="error-banner">{error}</div>}
+      </div>
+
+      <div className="panel-card result-panel">
+        {!result && <div className="empty-state"><Globe2 size={24} /><h3>Trust score</h3><p>SSL, redirects, keywords, domain age, and hostname risks will be summarized here.</p></div>}
+        {result && (
+          <>
+            <div className="panel-heading">
+              <div>
+                <div className="section-label">{result.hostname}</div>
+                <h3>{result.risk_level}</h3>
+              </div>
+            </div>
+            <div className="metrics-grid">
+              <ConfidenceRing value={result.trust_score || 0} label="Trust score" accent="#1e9bff" />
+              <div className="stack-sm">
+                <ResultList items={[
+                  { title: 'Domain age', value: result.domain_age_days ? `${result.domain_age_days} days` : 'Unknown' },
+                  { title: 'TLS valid', value: result.ssl?.valid ? 'Yes' : 'No' },
+                  { title: 'Redirects', value: String(result.redirect_chain?.length || 0) },
+                ]} />
+              </div>
+            </div>
+            <div className="subpanel">
+              <h4>Explanation</h4>
+              <ul className="bullet-list">
+                {(result.explanation || []).map((line) => <li key={line}>{line}</li>)}
+              </ul>
+            </div>
+            <div className="subpanel">
+              <h4>Recommendations</h4>
+              <ul className="bullet-list">
+                {(result.recommendations || []).map((line) => <li key={line}>{line}</li>)}
+              </ul>
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+export default function App() {
+  const [token, setToken] = useState(() => localStorage.getItem('authToken'));
+
+  const handleLogin = (authToken) => {
+    localStorage.setItem('authToken', authToken);
+    setToken(authToken);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('authToken');
+    setToken(null);
+  };
+
+  return (
+    <Router>
+      <Routes>
+        <Route path="/login" element={token ? <Navigate to="/" replace /> : <Login onLogin={handleLogin} />} />
+        <Route path="/register" element={token ? <Navigate to="/" replace /> : <Register onLogin={handleLogin} />} />
+        <Route
+          path="/*"
+          element={(
+            <ProtectedRoute isAuthenticated={Boolean(token)}>
+              <AppShell token={token} onLogout={handleLogout} />
+            </ProtectedRoute>
+          )}
+        />
+      </Routes>
+    </Router>
+  );
+}

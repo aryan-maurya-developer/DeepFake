@@ -12,11 +12,18 @@ import base64
 import time
 import os
 import sys
+from pathlib import Path
 
-# Add the model directory to path
-sys.path.append("/app/temp_repo")
-
-from model import RawNet
+CURRENT_DIR = Path(__file__).resolve().parent
+DOCKER_REPO_DIR = Path("/app/temp_repo")
+LOCAL_REPO_DIR = CURRENT_DIR / "temp_repo"
+MODEL_REPO_DIR = DOCKER_REPO_DIR if DOCKER_REPO_DIR.exists() else LOCAL_REPO_DIR
+if MODEL_REPO_DIR.exists():
+    sys.path.append(str(MODEL_REPO_DIR))
+try:
+    from model import RawNet
+except Exception:
+    RawNet = None
 
 app = Flask(__name__)
 
@@ -28,6 +35,11 @@ device = None
 def load_model():
     """Load the pretrained Vocoder Artifacts detection model."""
     global model, device
+    if RawNet is None:
+        raise RuntimeError(
+            f"Audio model repository not found. Expected at {MODEL_REPO_DIR}. "
+            "Clone the upstream repository into models/audio/vocoder_artifacts/temp_repo."
+        )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -47,7 +59,10 @@ def load_model():
     )
 
     # Load pretrained weights
-    model_path = "/app/models/librifake_pretrained_lambda0.5_epoch_25.pth"
+    model_path = os.environ.get(
+        "VOCODER_MODEL_PATH",
+        str((CURRENT_DIR / "models" / "librifake_pretrained_lambda0.5_epoch_25.pth").resolve()),
+    )
     if os.path.exists(model_path):
         checkpoint = torch.load(model_path, map_location=device)
         model.load_state_dict(checkpoint)
