@@ -35,6 +35,12 @@ Each model runs in an isolated Docker container, while a centralized **API Gatew
 
 ---
 
+<div align="center">
+<h3>V2 of DeepShield - some chnages in ui ux and all stuff</h3>
+  <img src="docs/v2/v2-amsr.gif">
+</div>
+
+  
 ## 🚀 Why AmsR DeepShield?
 
 - 🧩 **Plug-and-play architecture** — easily integrate new detection models  
